@@ -361,4 +361,21 @@ describe("VoiceActivity", () => {
     for (let i = 0; i < 50; i++) vad.push(noise(0.005), 16000);
     expect(seen).toEqual(["start", "end"]);
   });
+
+  it("keeps the floor of speech that arrives in 250 ms frames", () => {
+    // a 250 ms frame averages over the dips between syllables; the floor must not rise to it
+    const vad = new VoiceActivity();
+    const seen: string[] = [];
+    vad.on("speechStart", () => seen.push("start"));
+    vad.on("speechEnd", () => seen.push("end"));
+    const frame = (syllables: boolean) => {
+      const out = new Float32Array(4000);
+      for (let k = 0; k < 12; k++) out.set(noise(syllables && k % 12 < 7 ? 0.1 : 0.006).subarray(0, 4000 / 12 | 0), k * (4000 / 12 | 0));
+      return out;
+    };
+    for (let i = 0; i < 8; i++) vad.push(noise(0.005).subarray(0, 320), 16000);
+    for (let i = 0; i < 8; i++) vad.push(frame(false), 16000);
+    for (let i = 0; i < 80; i++) vad.push(frame(true), 16000); // 20 s
+    expect(seen).toEqual(["start"]);
+  });
 });

@@ -58,15 +58,29 @@ export class VoiceActivity extends Emitter<VoiceActivityEvents> {
   /** One frame of mono audio: Float32 in -1..1 or Int16. */
   push(frame: Float32Array | Int16Array, sampleRate: number): void {
     const scale = frame instanceof Int16Array ? 1 / 32768 : 1;
+    // the quietest 20 ms inside the frame as well: a frame of 100 ms or more averages over the dips
+    // between syllables, which is what tells speech from steady noise
+    const block = Math.max(1, Math.round(sampleRate / 50));
     let sum = 0;
-    for (let i = 0; i < frame.length; i++) sum += (frame[i] * scale) ** 2;
+    let part = 0;
+    let quietest = Infinity;
+    for (let i = 0; i < frame.length; i++) {
+      const v = (frame[i] * scale) ** 2;
+      sum += v;
+      part += v;
+      if ((i + 1) % block === 0) {
+        quietest = Math.min(quietest, Math.sqrt(part / block));
+        part = 0;
+      }
+    }
     const rms = Math.sqrt(sum / Math.max(frame.length, 1));
+    if (quietest === Infinity) quietest = rms;
     const ms = (frame.length / sampleRate) * 1000;
     this.clock += ms;
     const loud = rms > Math.max(this.o.minLevel, this.noise * this.o.ratio);
     // the floor follows the room while nobody speaks
     if (!loud && !this.speaking) this.noise = this.noise * 0.95 + rms * 0.05;
-    this.followLouderRoom(rms, ms);
+    this.followLouderRoom(quietest, ms);
     if (loud) {
       this.loudMs += ms;
       this.quietMs = 0;
