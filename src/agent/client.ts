@@ -37,13 +37,6 @@ const RTVI_TO_FREYA: Partial<Record<RTVIEvent, FreyaEventName>> = {
   [RTVIEvent.LLMFunctionCallStopped]: FreyaEvent.ToolCallStopped,
 };
 
-/**
- * The relay-server request may take this long (ms), or connectTimeoutMs when that is shorter. A
- * backend that never answers would otherwise hold connect() for ever, before the handshake and its
- * timeout even start; without its servers the session goes on as when the request fails.
- */
-const ICE_TIMEOUT_MS = 5_000;
-
 const LOG_LEVELS = { none: LogLevel.NONE, error: LogLevel.ERROR, warn: LogLevel.WARN, info: LogLevel.INFO, debug: LogLevel.DEBUG };
 
 /**
@@ -386,12 +379,14 @@ export class FreyaClient {
   }
 
   private async _fetchIceServers(signal: AbortSignal): Promise<RTCIceServer[] | undefined> {
+    // A backend that never answers would hold connect() for ever: this request comes before the
+    // handshake and its timeout. It gets the same connectTimeoutMs (reading the body included), and
+    // without its servers the session goes on, as when the request fails.
     const limit = this._config.connectTimeoutMs ?? 30_000;
     const ctl = new AbortController();
     const onAbort = () => ctl.abort();
     signal.addEventListener("abort", onAbort, { once: true });
-    // covers reading the body too
-    const timer = setTimeout(onAbort, limit > 0 ? Math.min(ICE_TIMEOUT_MS, limit) : ICE_TIMEOUT_MS);
+    const timer = limit > 0 ? setTimeout(onAbort, limit) : undefined;
     try {
       const res = await fetch(`${this._config.baseUrl}/api/token/webrtc/ice-servers`, {
         headers: new Headers({ Authorization: `Bearer ${this._config.token}` }),

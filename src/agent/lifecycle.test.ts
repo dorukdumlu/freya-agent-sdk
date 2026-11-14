@@ -116,7 +116,7 @@ describe("FreyaClient lifecycle", () => {
     );
     vi.stubGlobal("fetch", hung);
     try {
-      // the relay request gets connectTimeoutMs here (less than 5 s), then the handshake its own
+      // the relay request gets connectTimeoutMs, then the handshake its own
       const c = new FreyaClient({ baseUrl: "https://x", token: "t", logLevel: "none", connectTimeoutMs: 200 });
       const pending = c.connect();
       await vi.waitFor(() => expect(created).toHaveLength(1), { timeout: 2000, interval: 5 });
