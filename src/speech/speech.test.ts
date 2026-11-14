@@ -326,4 +326,39 @@ describe("VoiceActivity", () => {
     for (let i = 0; i < 80; i++) vad.push(frame(0.001), 16000);
     expect(seen).toEqual(["start", "end"]);
   });
+
+  // white noise at a given RMS, 20 ms frames, repeatable
+  let seed = 7;
+  const noise = (rms: number) =>
+    new Float32Array(320).map(() => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff - 0.5) * rms * Math.sqrt(12));
+
+  it("ends speaking when the room gets louder and stays loud, with nobody speaking", () => {
+    const vad = new VoiceActivity();
+    const seen: string[] = [];
+    vad.on("speechStart", () => seen.push("start"));
+    vad.on("speechEnd", () => seen.push("end"));
+    for (let i = 0; i < 100; i++) vad.push(noise(0.005), 16000); // 2 s of a quiet room
+    // an air conditioner, a car, a street: 30 s of steady noise ten times louder
+    let endedAt = -1;
+    for (let i = 0; i < 1500; i++) {
+      vad.push(noise(0.05), 16000);
+      if (endedAt < 0 && seen.includes("end")) endedAt = i * 20;
+    }
+    expect(seen).toEqual(["start", "end"]);
+    expect(endedAt).toBeLessThan(5000);
+    expect(vad.isSpeaking).toBe(false);
+  });
+
+  it("does not end a long stretch of speech that pauses between syllables", () => {
+    const vad = new VoiceActivity();
+    const seen: string[] = [];
+    vad.on("speechStart", () => seen.push("start"));
+    vad.on("speechEnd", () => seen.push("end"));
+    for (let i = 0; i < 100; i++) vad.push(noise(0.005), 16000);
+    // 20 s of syllables at four a second: 150 ms of voice, 100 ms near the floor
+    for (let i = 0; i < 1000; i++) vad.push(noise(i % 12 < 7 ? 0.1 : 0.006), 16000);
+    expect(seen).toEqual(["start"]);
+    for (let i = 0; i < 50; i++) vad.push(noise(0.005), 16000);
+    expect(seen).toEqual(["start", "end"]);
+  });
 });
